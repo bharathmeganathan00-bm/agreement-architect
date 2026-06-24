@@ -1,16 +1,22 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "AGZUS Client Agreement Generator" },
-      { name: "description", content: "Fill in client and project details and download the completed AGZUS Client Service Agreement PDF." },
+      {
+        name: "description",
+        content:
+          "Fill in client and project details and download the completed AGZUS Client Service Agreement PDF.",
+      },
     ],
   }),
   component: AgreementMaker,
 });
+
+type SplitOption = "50/30/20" | "40/40/20" | "30/40/30" | "Custom";
 
 type FormState = {
   agreementDate: string;
@@ -30,11 +36,9 @@ type FormState = {
   hostingDomain: "Yes" | "No";
   projectDuration: string;
   totalCost: string;
-  advancePayment: string;
+  paymentSplit: SplitOption;
   advancePercent: string;
-  secondPayment: string;
   secondPercent: string;
-  finalPayment: string;
   finalPercent: string;
   monthlySubscription: string;
   renewalDate: string;
@@ -43,9 +47,11 @@ type FormState = {
   freeSupportDays: string;
   spName: string;
   spDesignation: string;
-  spDate: string;
+  spDateDD: string;
+  spDateMM: string;
   clientDesignation: string;
-  clientDate: string;
+  clientDateDD: string;
+  clientDateMM: string;
 };
 
 const initial: FormState = {
@@ -66,12 +72,10 @@ const initial: FormState = {
   hostingDomain: "No",
   projectDuration: "",
   totalCost: "",
-  advancePayment: "",
-  advancePercent: "",
-  secondPayment: "",
-  secondPercent: "",
-  finalPayment: "",
-  finalPercent: "",
+  paymentSplit: "50/30/20",
+  advancePercent: "50",
+  secondPercent: "30",
+  finalPercent: "20",
   monthlySubscription: "",
   renewalDate: "",
   subscriptionPlan: "",
@@ -79,15 +83,22 @@ const initial: FormState = {
   freeSupportDays: "",
   spName: "",
   spDesignation: "",
-  spDate: "",
+  spDateDD: "",
+  spDateMM: "",
   clientDesignation: "",
-  clientDate: "",
+  clientDateDD: "",
+  clientDateMM: "",
 };
 
-// Page height for all pages (A4-ish): 842.25
 const PH = 842.25;
-// helper: convert top-down y to pdf-lib bottom-up
 const Y = (top: number) => PH - top;
+
+function formatINR(n: number) {
+  if (!isFinite(n)) return "";
+  return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(
+    Math.round(n),
+  );
+}
 
 function AgreementMaker() {
   const [form, setForm] = useState<FormState>(initial);
@@ -96,6 +107,35 @@ function AgreementMaker() {
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
+
+  const onSplitChange = (v: SplitOption) => {
+    setForm((f) => {
+      const next = { ...f, paymentSplit: v };
+      if (v === "50/30/20") {
+        next.advancePercent = "50";
+        next.secondPercent = "30";
+        next.finalPercent = "20";
+      } else if (v === "40/40/20") {
+        next.advancePercent = "40";
+        next.secondPercent = "40";
+        next.finalPercent = "20";
+      } else if (v === "30/40/30") {
+        next.advancePercent = "30";
+        next.secondPercent = "40";
+        next.finalPercent = "30";
+      }
+      return next;
+    });
+  };
+
+  const total = parseFloat(form.totalCost) || 0;
+  const aPct = parseFloat(form.advancePercent) || 0;
+  const sPct = parseFloat(form.secondPercent) || 0;
+  const fPct = parseFloat(form.finalPercent) || 0;
+  const advanceAmt = useMemo(() => (total * aPct) / 100, [total, aPct]);
+  const secondAmt = useMemo(() => (total * sPct) / 100, [total, sPct]);
+  const finalAmt = useMemo(() => (total * fPct) / 100, [total, fPct]);
+  const pctSum = aPct + sPct + fPct;
 
   const generate = async () => {
     setGenerating(true);
@@ -106,112 +146,118 @@ function AgreementMaker() {
       const bytes = await res.arrayBuffer();
       const pdf = await PDFDocument.load(bytes);
       const font = await pdf.embedFont(StandardFonts.Helvetica);
-      const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold);
       const pages = pdf.getPages();
       const black = rgb(0.05, 0.05, 0.05);
+      const white = rgb(1, 1, 1);
 
+      // Draw text just above the underscore line. Auto-shrink to fit maxWidth.
       const draw = (
         pageIdx: number,
         text: string,
         x: number,
         topY: number,
-        size = 10,
-        bold = false,
+        opts: { size?: number; maxWidth?: number } = {},
       ) => {
         if (!text) return;
+        let size = opts.size ?? 10;
+        const maxWidth = opts.maxWidth;
+        if (maxWidth) {
+          while (size > 6 && font.widthOfTextAtSize(text, size) > maxWidth) {
+            size -= 0.5;
+          }
+        }
         pages[pageIdx].drawText(text, {
           x,
-          y: Y(topY) - size * 0.2,
+          y: Y(topY) - size * 0.15,
           size,
-          font: bold ? fontBold : font,
+          font,
           color: black,
         });
       };
 
-      // PAGE 1 — Agreement date (between "made on" and "between")
-      draw(0, form.agreementDate, 175, 204, 10);
+      // Cover existing template text (e.g. "Yes / No") with a white rect
+      const cover = (
+        pageIdx: number,
+        x: number,
+        topY: number,
+        w: number,
+        h = 11,
+      ) => {
+        pages[pageIdx].drawRectangle({
+          x,
+          y: Y(topY) - 2,
+          width: w,
+          height: h,
+          color: white,
+        });
+      };
+
+      // ===== PAGE 1 =====
+      // Agreement date between "made on" and "between:"
+      draw(0, form.agreementDate, 207, 195, { maxWidth: 85 });
 
       // Client details (right column)
-      draw(0, form.clientName, 405, 279);
-      draw(0, form.companyName, 405, 299);
-      draw(0, form.contactNo, 405, 319);
-      draw(0, form.email, 405, 339);
-      draw(0, form.address, 405, 359);
+      draw(0, form.clientName, 382, 271, { maxWidth: 165 });
+      draw(0, form.companyName, 382, 291, { maxWidth: 165 });
+      draw(0, form.contactNo, 382, 311, { maxWidth: 165 });
+      draw(0, form.email, 382, 331, { maxWidth: 165 });
+      draw(0, form.address, 382, 351, { maxWidth: 165 });
 
-      // PAGE 2 — Project Scope (left column values)
-      draw(1, form.projectType, 165, 386);
-      draw(1, form.pagesModules, 165, 409);
-      draw(1, form.mainFeatures, 165, 432);
-      draw(1, form.technology, 165, 455);
+      // ===== PAGE 2 — Project Scope =====
+      draw(1, form.projectType, 150, 378, { maxWidth: 175 });
+      draw(1, form.pagesModules, 155, 401, { maxWidth: 170 });
+      draw(1, form.mainFeatures, 150, 424, { maxWidth: 175 });
+      draw(1, form.technology, 175, 448, { maxWidth: 150 });
 
-      // Yes/No selections (right column) — strike through the opposite by drawing a line
+      // Yes/No: cover the "Yes / No" template text, draw only selected
       const yesNo = (pageIdx: number, top: number, value: "Yes" | "No") => {
-        // The label area "Yes / No" sits around x=425-470 on right column
-        // Draw a checkmark "✓" next to the chosen word by overlaying.
-        const p = pages[pageIdx];
-        const yesX = 432;
-        const noX = 460;
-        const y = Y(top) - 1;
-        const chosenX = value === "Yes" ? yesX : noX;
-        const otherX = value === "Yes" ? noX : yesX;
-        const otherW = value === "Yes" ? 14 : 18;
-        // strike-through the non-selected
-        p.drawLine({
-          start: { x: otherX - 2, y: y + 3 },
-          end: { x: otherX + otherW, y: y + 3 },
-          thickness: 1,
-          color: black,
-        });
-        // underline the selected
-        p.drawLine({
-          start: { x: chosenX - 2, y: y - 2 },
-          end: { x: chosenX + (value === "Yes" ? 14 : 18), y: y - 2 },
-          thickness: 1.2,
-          color: black,
-        });
+        cover(pageIdx, 459, top, 30, 12);
+        draw(pageIdx, value, 462, top, { size: 10 });
       };
-
-      yesNo(1, 381, form.adminPanel);
-      yesNo(1, 403, form.mobileResponsive);
-      yesNo(1, 425, form.paymentGateway);
-      yesNo(1, 447, form.whatsappSmsEmail);
-      yesNo(1, 469, form.hostingDomain);
+      yesNo(1, 374, form.adminPanel);
+      yesNo(1, 396, form.mobileResponsive);
+      yesNo(1, 418, form.paymentGateway);
+      yesNo(1, 440, form.whatsappSmsEmail);
+      yesNo(1, 462, form.hostingDomain);
 
       // Project duration
-      draw(1, form.projectDuration, 210, 670);
+      draw(1, form.projectDuration, 210, 662, { maxWidth: 55 });
 
-      // PAGE 3 — Payment Terms
-      draw(2, form.totalCost, 215, 124);
-      draw(2, form.advancePayment, 175, 155);
-      draw(2, form.advancePercent, 285, 155);
-      draw(2, form.secondPayment, 175, 177);
-      draw(2, form.secondPercent, 285, 177);
-      draw(2, form.finalPayment, 175, 199);
-      draw(2, form.finalPercent, 285, 199);
+      // ===== PAGE 3 — Payment Terms =====
+      draw(2, total ? formatINR(total) : "", 162, 117, { maxWidth: 130 });
+      // Advance: amount, percent
+      draw(2, total ? formatINR(advanceAmt) : "", 185, 147, { maxWidth: 100 });
+      draw(2, form.advancePercent, 310, 147, { size: 10 });
+      draw(2, total ? formatINR(secondAmt) : "", 180, 169, { maxWidth: 100 });
+      draw(2, form.secondPercent, 310, 169, { size: 10 });
+      draw(2, total ? formatINR(finalAmt) : "", 168, 191, { maxWidth: 115 });
+      draw(2, form.finalPercent, 310, 191, { size: 10 });
 
-      // Subscription block
-      draw(2, form.monthlySubscription, 320, 405);
-      draw(2, form.renewalDate, 475, 368);
-      draw(2, form.subscriptionPlan, 405, 386);
+      // Subscription
+      draw(2, form.renewalDate, 462, 361, { maxWidth: 50 });
+      draw(2, form.subscriptionPlan, 405, 378, { maxWidth: 145 });
+      draw(2, form.monthlySubscription, 280, 397, { maxWidth: 80 });
 
-      // PAGE 4 — Revisions & Support
-      draw(3, form.revisionRounds, 175, 122);
-      draw(3, form.freeSupportDays, 175, 524);
+      // ===== PAGE 4 — Revisions & Support =====
+      draw(3, form.revisionRounds, 158, 115, { maxWidth: 90 });
+      draw(3, form.freeSupportDays, 160, 556, { maxWidth: 95 });
 
-      // PAGE 5 — Signatures
-      // Service Provider (left column ~x=72)
-      draw(4, form.spName, 110, 737);
-      draw(4, form.spDesignation, 140, 758);
-      draw(4, form.spDate, 105, 779);
+      // ===== PAGE 5 — Signatures =====
+      // Service Provider (left)
+      draw(4, form.spName, 112, 731, { maxWidth: 165 });
+      draw(4, form.spDesignation, 136, 752, { maxWidth: 130 });
+      // Date: ____/____/2026  — DD around x=112, MM around x=140
+      draw(4, form.spDateDD, 115, 774, { size: 10 });
+      draw(4, form.spDateMM, 142, 774, { size: 10 });
 
-      // Client (right column ~x=324)
-      draw(4, form.clientName, 362, 715);
-      draw(4, form.companyName, 380, 737);
-      draw(4, form.clientDesignation, 395, 759);
-      draw(4, form.clientDate, 358, 780);
+      // Client (right)
+      draw(4, form.clientName, 362, 710, { maxWidth: 170 });
+      draw(4, form.companyName, 380, 731, { maxWidth: 155 });
+      draw(4, form.clientDesignation, 392, 752, { maxWidth: 145 });
+      draw(4, form.clientDateDD, 365, 775, { size: 10 });
+      draw(4, form.clientDateMM, 393, 775, { size: 10 });
 
       const out = await pdf.save();
-      // Convert to a fresh ArrayBuffer to satisfy Blob typing
       const buf = new ArrayBuffer(out.byteLength);
       new Uint8Array(buf).set(out);
       const blob = new Blob([buf], { type: "application/pdf" });
@@ -253,7 +299,12 @@ function AgreementMaker() {
           className="space-y-8"
         >
           <Section title="1. Agreement Date">
-            <Field label="Agreement Date" value={form.agreementDate} onChange={(v) => set("agreementDate", v)} type="date" />
+            <Field
+              label="Agreement Date"
+              value={form.agreementDate}
+              onChange={(v) => set("agreementDate", v)}
+              type="date"
+            />
           </Section>
 
           <Section title="2. Client Details">
@@ -277,36 +328,127 @@ function AgreementMaker() {
           </Section>
 
           <Section title="4. Project Timeline">
-            <Field label="Estimated Project Duration (e.g. 30 days)" value={form.projectDuration} onChange={(v) => set("projectDuration", v)} />
+            <Field
+              label="Estimated Project Duration (e.g. 30 days)"
+              value={form.projectDuration}
+              onChange={(v) => set("projectDuration", v)}
+            />
           </Section>
 
           <Section title="5. Payment Terms">
-            <Field label="Total Cost (Rs.)" value={form.totalCost} onChange={(v) => set("totalCost", v)} />
-            <Field label="Advance Payment (Rs.)" value={form.advancePayment} onChange={(v) => set("advancePayment", v)} />
-            <Field label="Advance %" value={form.advancePercent} onChange={(v) => set("advancePercent", v)} />
-            <Field label="Second Payment (Rs.)" value={form.secondPayment} onChange={(v) => set("secondPayment", v)} />
-            <Field label="Second %" value={form.secondPercent} onChange={(v) => set("secondPercent", v)} />
-            <Field label="Final Payment (Rs.)" value={form.finalPayment} onChange={(v) => set("finalPayment", v)} />
-            <Field label="Final %" value={form.finalPercent} onChange={(v) => set("finalPercent", v)} />
+            <Field
+              label="Total Project Cost (Rs.)"
+              value={form.totalCost}
+              onChange={(v) => set("totalCost", v)}
+              type="number"
+            />
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium text-foreground">
+                Payment Percentage Split
+              </span>
+              <select
+                value={form.paymentSplit}
+                onChange={(e) => onSplitChange(e.target.value as SplitOption)}
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="50/30/20">50% / 30% / 20%</option>
+                <option value="40/40/20">40% / 40% / 20%</option>
+                <option value="30/40/30">30% / 40% / 30%</option>
+                <option value="Custom">Custom</option>
+              </select>
+            </label>
+
+            {form.paymentSplit === "Custom" && (
+              <>
+                <Field
+                  label="Advance %"
+                  value={form.advancePercent}
+                  onChange={(v) => set("advancePercent", v)}
+                  type="number"
+                />
+                <Field
+                  label="Second %"
+                  value={form.secondPercent}
+                  onChange={(v) => set("secondPercent", v)}
+                  type="number"
+                />
+                <Field
+                  label="Final %"
+                  value={form.finalPercent}
+                  onChange={(v) => set("finalPercent", v)}
+                  type="number"
+                />
+              </>
+            )}
+
+            <div className="sm:col-span-2 rounded-md border border-border bg-muted/40 p-4 text-sm">
+              <div className="grid grid-cols-3 gap-3">
+                <Calc label={`Advance (${form.advancePercent || 0}%)`} value={total ? `Rs. ${formatINR(advanceAmt)}` : "—"} />
+                <Calc label={`Second (${form.secondPercent || 0}%)`} value={total ? `Rs. ${formatINR(secondAmt)}` : "—"} />
+                <Calc label={`Final (${form.finalPercent || 0}%)`} value={total ? `Rs. ${formatINR(finalAmt)}` : "—"} />
+              </div>
+              {pctSum !== 100 && (
+                <p className="mt-2 text-xs text-destructive">
+                  Percentages add up to {pctSum}% (should be 100%).
+                </p>
+              )}
+            </div>
           </Section>
 
           <Section title="6. Subscription Terms">
-            <Field label="Monthly Subscription Amount (Rs.)" value={form.monthlySubscription} onChange={(v) => set("monthlySubscription", v)} />
-            <Field label="Renewal Date (e.g. 5th)" value={form.renewalDate} onChange={(v) => set("renewalDate", v)} />
-            <Field label="Subscription Plan" value={form.subscriptionPlan} onChange={(v) => set("subscriptionPlan", v)} />
+            <Field
+              label="Monthly Subscription Amount (Rs.)"
+              value={form.monthlySubscription}
+              onChange={(v) => set("monthlySubscription", v)}
+            />
+            <Field
+              label="Renewal Date (e.g. 5th)"
+              value={form.renewalDate}
+              onChange={(v) => set("renewalDate", v)}
+            />
+            <Field
+              label="Subscription Plan"
+              value={form.subscriptionPlan}
+              onChange={(v) => set("subscriptionPlan", v)}
+            />
           </Section>
 
           <Section title="7. Revisions & Support">
-            <Field label="Revision Rounds" value={form.revisionRounds} onChange={(v) => set("revisionRounds", v)} />
-            <Field label="Free Support Days" value={form.freeSupportDays} onChange={(v) => set("freeSupportDays", v)} />
+            <Field
+              label="Revision Rounds"
+              value={form.revisionRounds}
+              onChange={(v) => set("revisionRounds", v)}
+            />
+            <Field
+              label="Free Support Days"
+              value={form.freeSupportDays}
+              onChange={(v) => set("freeSupportDays", v)}
+            />
           </Section>
 
           <Section title="8. Signature Details">
             <Field label="Service Provider Name" value={form.spName} onChange={(v) => set("spName", v)} />
-            <Field label="Service Provider Designation" value={form.spDesignation} onChange={(v) => set("spDesignation", v)} />
-            <Field label="Service Provider Date" value={form.spDate} onChange={(v) => set("spDate", v)} type="date" />
-            <Field label="Client Designation" value={form.clientDesignation} onChange={(v) => set("clientDesignation", v)} />
-            <Field label="Client Date" value={form.clientDate} onChange={(v) => set("clientDate", v)} type="date" />
+            <Field
+              label="Service Provider Designation"
+              value={form.spDesignation}
+              onChange={(v) => set("spDesignation", v)}
+            />
+            <div className="grid grid-cols-2 gap-3 sm:col-span-1">
+              <Field label="SP Date — DD" value={form.spDateDD} onChange={(v) => set("spDateDD", v)} />
+              <Field label="SP Date — MM" value={form.spDateMM} onChange={(v) => set("spDateMM", v)} />
+            </div>
+            <Field
+              label="Client Designation"
+              value={form.clientDesignation}
+              onChange={(v) => set("clientDesignation", v)}
+            />
+            <div className="grid grid-cols-2 gap-3 sm:col-span-1">
+              <Field label="Client Date — DD" value={form.clientDateDD} onChange={(v) => set("clientDateDD", v)} />
+              <Field label="Client Date — MM" value={form.clientDateMM} onChange={(v) => set("clientDateMM", v)} />
+            </div>
+            <p className="sm:col-span-2 text-xs text-muted-foreground">
+              Year is already printed as <strong>/2026</strong> on the PDF template.
+            </p>
           </Section>
 
           {error && (
@@ -400,6 +542,15 @@ function YesNo({
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+function Calc({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="font-semibold text-foreground">{value}</div>
     </div>
   );
 }
