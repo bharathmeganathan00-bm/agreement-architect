@@ -363,13 +363,13 @@ function AgreementMaker() {
   };
 
   return (
-    <div className="min-h-screen bg-background py-10 px-4">
+    <div className="min-h-screen bg-background py-6 px-4 sm:py-10">
       <div className="mx-auto max-w-4xl">
-        <header className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground">
+        <header className="mb-6 sm:mb-8">
+          <h1 className="text-xl font-bold text-foreground sm:text-3xl">
             AGZUS Client Agreement Generator
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
+          <p className="mt-1.5 text-sm text-muted-foreground sm:mt-2">
             Fill in the details below and download the completed AGZUS Client
             Service Agreement PDF.
           </p>
@@ -380,7 +380,7 @@ function AgreementMaker() {
             e.preventDefault();
             void generate();
           }}
-          className="space-y-8"
+          className="space-y-4 pb-32 sm:space-y-8 sm:pb-0"
         >
           <Section title="1. Agreement Date">
             <Field
@@ -433,7 +433,7 @@ function AgreementMaker() {
               <select
                 value={form.paymentSplit}
                 onChange={(e) => onSplitChange(e.target.value as SplitOption)}
-                className="rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus:ring-2 focus:ring-ring"
+                className="rounded-md border border-input bg-background px-3 py-3 text-base shadow-sm outline-none focus:ring-2 focus:ring-ring sm:py-2 sm:text-sm"
               >
                 <option value="50/30/20">50% / 30% / 20%</option>
                 <option value="40/40/20">40% / 40% / 20%</option>
@@ -465,8 +465,8 @@ function AgreementMaker() {
               </>
             )}
 
-            <div className="sm:col-span-2 rounded-md border border-border bg-muted/40 p-4 text-sm">
-              <div className="grid grid-cols-3 gap-3">
+            <div className="col-span-1 sm:col-span-2 rounded-md border border-border bg-muted/40 p-3 sm:p-4 text-sm">
+              <div className="grid grid-cols-3 gap-2 sm:gap-3">
                 <Calc label={`Advance (${form.advancePercent || 0}%)`} value={total ? `Rs. ${formatINR(advanceAmt)}` : "—"} />
                 <Calc label={`Second (${form.secondPercent || 0}%)`} value={total ? `Rs. ${formatINR(secondAmt)}` : "—"} />
                 <Calc label={`Final (${form.finalPercent || 0}%)`} value={total ? `Rs. ${formatINR(finalAmt)}` : "—"} />
@@ -541,18 +541,18 @@ function AgreementMaker() {
             </div>
           )}
 
-          <div className="flex items-center justify-end gap-3 sticky bottom-4">
+          <div className="sticky bottom-0 -mx-4 sm:mx-0 flex flex-col gap-2 border-t border-border bg-background/95 px-4 py-4 backdrop-blur sm:static sm:flex-row sm:justify-end sm:gap-3 sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
             <button
               type="button"
               onClick={() => setForm(initial)}
-              className="rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
+              className="w-full rounded-md border border-input bg-background px-4 py-3 text-sm font-medium hover:bg-accent sm:w-auto sm:py-2"
             >
               Reset
             </button>
             <button
               type="submit"
               disabled={generating}
-              className="rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow hover:bg-primary/90 disabled:opacity-60"
+              className="w-full rounded-md bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground shadow hover:bg-primary/90 disabled:opacity-60 sm:w-auto sm:py-2.5"
             >
               {generating ? "Generating…" : "Generate Agreement PDF"}
             </button>
@@ -565,9 +565,9 @@ function AgreementMaker() {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-border bg-card p-6 shadow-sm">
-      <h2 className="mb-4 text-lg font-semibold text-card-foreground">{title}</h2>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{children}</div>
+    <section className="rounded-lg border border-border bg-card p-4 shadow-sm sm:p-6">
+      <h2 className="mb-3 text-base font-semibold text-card-foreground sm:mb-4 sm:text-lg">{title}</h2>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">{children}</div>
     </section>
   );
 }
@@ -592,7 +592,7 @@ function Field({
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus:ring-2 focus:ring-ring"
+        className="rounded-md border border-input bg-background px-3 py-3 text-base shadow-sm outline-none focus:ring-2 focus:ring-ring sm:py-2 sm:text-sm"
       />
     </label>
   );
@@ -616,7 +616,7 @@ function YesNo({
             key={opt}
             type="button"
             onClick={() => onChange(opt)}
-            className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+            className={`flex-1 rounded-md border px-3 py-3 text-sm font-medium transition-colors sm:py-2 ${
               value === opt
                 ? "border-primary bg-primary text-primary-foreground"
                 : "border-input bg-background hover:bg-accent"
