@@ -91,7 +91,6 @@ const initial: FormState = {
 };
 
 const PH = 842.25;
-const Y = (top: number) => PH - top;
 
 function formatINR(n: number) {
   if (!isFinite(n)) return "";
@@ -150,112 +149,195 @@ function AgreementMaker() {
       const black = rgb(0.05, 0.05, 0.05);
       const white = rgb(1, 1, 1);
 
-      // Draw text just above the underscore line. Auto-shrink to fit maxWidth.
-      const draw = (
+      // Draw text sitting just ABOVE the underscore line.
+      // `labelTop` = pdfplumber top of the label/line row.
+      // We add ~9pt to reach the line baseline, then place text 1pt above it.
+      type DrawOpts = {
+        size?: number;
+        x2?: number; // right edge of the underscore line (for centering / maxWidth)
+        center?: boolean;
+        minSize?: number;
+      };
+      const drawIn = (
         pageIdx: number,
         text: string,
-        x: number,
-        topY: number,
-        opts: { size?: number; maxWidth?: number } = {},
+        x1: number,
+        labelTop: number,
+        opts: DrawOpts = {},
       ) => {
         if (!text) return;
-        let size = opts.size ?? 10;
-        const maxWidth = opts.maxWidth;
+        const startSize = opts.size ?? 9;
+        const minSize = opts.minSize ?? 6;
+        const maxWidth = opts.x2 != null ? opts.x2 - x1 - 2 : undefined;
+        let size = startSize;
         if (maxWidth) {
-          while (size > 6 && font.widthOfTextAtSize(text, size) > maxWidth) {
+          while (
+            size > minSize &&
+            font.widthOfTextAtSize(text, size) > maxWidth
+          ) {
             size -= 0.5;
           }
         }
-        pages[pageIdx].drawText(text, {
-          x,
-          y: Y(topY) - size * 0.15,
-          size,
-          font,
-          color: black,
-        });
+        const w = font.widthOfTextAtSize(text, size);
+        let x = x1;
+        if (opts.center && opts.x2 != null) {
+          x = x1 + Math.max(0, (opts.x2 - x1 - w) / 2);
+        }
+        // baseline ≈ 1pt above the underscore line (line ~ labelTop + 10)
+        const y = PH - (labelTop + 9);
+        pages[pageIdx].drawText(text, { x, y, size, font, color: black });
       };
 
-      // Cover existing template text (e.g. "Yes / No") with a white rect
+      // White-out a region (used to hide the "Yes / No" template text)
       const cover = (
         pageIdx: number,
         x: number,
-        topY: number,
+        y: number,
         w: number,
-        h = 11,
+        h: number,
       ) => {
         pages[pageIdx].drawRectangle({
           x,
-          y: Y(topY) - 2,
+          y: PH - y - h,
           width: w,
           height: h,
           color: white,
         });
       };
 
-      // ===== PAGE 1 =====
-      // Agreement date between "made on" and "between:"
-      draw(0, form.agreementDate, 207, 195, { maxWidth: 85 });
-
-      // Client details (right column)
-      draw(0, form.clientName, 382, 271, { maxWidth: 165 });
-      draw(0, form.companyName, 382, 291, { maxWidth: 165 });
-      draw(0, form.contactNo, 382, 311, { maxWidth: 165 });
-      draw(0, form.email, 382, 331, { maxWidth: 165 });
-      draw(0, form.address, 382, 351, { maxWidth: 165 });
-
-      // ===== PAGE 2 — Project Scope =====
-      draw(1, form.projectType, 150, 378, { maxWidth: 175 });
-      draw(1, form.pagesModules, 155, 401, { maxWidth: 170 });
-      draw(1, form.mainFeatures, 150, 424, { maxWidth: 175 });
-      draw(1, form.technology, 175, 448, { maxWidth: 150 });
-
-      // Yes/No: cover the "Yes / No" template text, draw only selected
-      const yesNo = (pageIdx: number, top: number, value: "Yes" | "No") => {
-        cover(pageIdx, 459, top, 30, 12);
-        draw(pageIdx, value, 462, top, { size: 10 });
+      const yesNo = (
+        pageIdx: number,
+        labelTop: number,
+        value: "Yes" | "No",
+      ) => {
+        // "Yes / No" sits roughly x=460-491, top=374.8 (height ~10).
+        // Cover a slightly wider band to be safe, then draw selected centered.
+        cover(pageIdx, 457, labelTop - 1, 38, 13);
+        drawIn(pageIdx, value, 457, labelTop - 10, {
+          x2: 495,
+          center: true,
+          size: 10,
+        });
       };
-      yesNo(1, 374, form.adminPanel);
-      yesNo(1, 396, form.mobileResponsive);
-      yesNo(1, 418, form.paymentGateway);
-      yesNo(1, 440, form.whatsappSmsEmail);
-      yesNo(1, 462, form.hostingDomain);
 
-      // Project duration
-      draw(1, form.projectDuration, 210, 662, { maxWidth: 55 });
+      // ============ PAGE 1 ============
+      // "This Agreement is made on ___ between:" line is between x≈185 and x≈295, top≈195.3
+      drawIn(0, form.agreementDate, 188, 195, {
+        x2: 295,
+        center: true,
+        size: 9,
+      });
 
-      // ===== PAGE 3 — Payment Terms =====
-      draw(2, total ? formatINR(total) : "", 162, 117, { maxWidth: 130 });
-      // Advance: amount, percent
-      draw(2, total ? formatINR(advanceAmt) : "", 185, 147, { maxWidth: 100 });
-      draw(2, form.advancePercent, 310, 147, { size: 10 });
-      draw(2, total ? formatINR(secondAmt) : "", 180, 169, { maxWidth: 100 });
-      draw(2, form.secondPercent, 310, 169, { size: 10 });
-      draw(2, total ? formatINR(finalAmt) : "", 168, 191, { maxWidth: 115 });
-      draw(2, form.finalPercent, 310, 191, { size: 10 });
+      // Client Details (right column). Each row: label top, underscore line extends to ~565.
+      // Centered & auto-shrunk so long emails/addresses fit neatly above the line.
+      drawIn(0, form.clientName, 382, 271.5, { x2: 565, center: true, size: 9 });
+      drawIn(0, form.companyName, 400, 291.5, { x2: 565, center: true, size: 9 });
+      drawIn(0, form.contactNo, 378, 311.5, { x2: 565, center: true, size: 9 });
+      drawIn(0, form.email, 350, 331.5, { x2: 565, center: true, size: 9 });
+      drawIn(0, form.address, 362, 351.5, { x2: 565, center: true, size: 9 });
 
-      // Subscription
-      draw(2, form.renewalDate, 462, 361, { maxWidth: 50 });
-      draw(2, form.subscriptionPlan, 405, 378, { maxWidth: 145 });
-      draw(2, form.monthlySubscription, 280, 397, { maxWidth: 80 });
+      // ============ PAGE 2 ============
+      // Project scope (left column underscore lines run to ~x=310)
+      drawIn(1, form.projectType, 132, 378.7, { x2: 310, size: 9 });
+      drawIn(1, form.pagesModules, 157, 401.9, { x2: 310, size: 9 });
+      drawIn(1, form.mainFeatures, 140, 425.1, { x2: 310, size: 9 });
+      drawIn(1, form.technology, 178, 448.3, { x2: 310, size: 9 });
 
-      // ===== PAGE 4 — Revisions & Support =====
-      draw(3, form.revisionRounds, 158, 115, { maxWidth: 90 });
-      draw(3, form.freeSupportDays, 160, 556, { maxWidth: 95 });
+      // Yes/No right column
+      yesNo(1, 374.8, form.adminPanel);
+      yesNo(1, 396.9, form.mobileResponsive);
+      yesNo(1, 418.9, form.paymentGateway);
+      yesNo(1, 440.9, form.whatsappSmsEmail);
+      yesNo(1, 462.9, form.hostingDomain);
 
-      // ===== PAGE 5 — Signatures =====
-      // Service Provider (left)
-      draw(4, form.spName, 112, 731, { maxWidth: 165 });
-      draw(4, form.spDesignation, 136, 752, { maxWidth: 130 });
-      // Date: ____/____/2026  — DD around x=112, MM around x=140
-      draw(4, form.spDateDD, 115, 774, { size: 10 });
-      draw(4, form.spDateMM, 142, 774, { size: 10 });
+      // Estimated project duration: line 207.6→263.2 top=662.4
+      drawIn(1, form.projectDuration, 210, 662.4, {
+        x2: 263,
+        center: true,
+        size: 9,
+      });
 
-      // Client (right)
-      draw(4, form.clientName, 362, 710, { maxWidth: 170 });
-      draw(4, form.companyName, 380, 731, { maxWidth: 155 });
-      draw(4, form.clientDesignation, 392, 752, { maxWidth: 145 });
-      draw(4, form.clientDateDD, 365, 775, { size: 10 });
-      draw(4, form.clientDateMM, 393, 775, { size: 10 });
+      // ============ PAGE 3 ============
+      // Total Project Cost: after "Rs." x≈157, line ends ~x=295
+      drawIn(2, total ? formatINR(total) : "", 160, 117.6, {
+        x2: 295,
+        size: 9,
+      });
+
+      // Advance: amount after "Rs." (~x=180) up to "/" (~x=290); percent in 307→343
+      drawIn(2, total ? formatINR(advanceAmt) : "", 182, 147.9, {
+        x2: 290,
+        size: 9,
+      });
+      drawIn(2, form.advancePercent, 308, 147.9, { x2: 343, size: 9 });
+
+      drawIn(2, total ? formatINR(secondAmt) : "", 177, 169.9, {
+        x2: 290,
+        size: 9,
+      });
+      drawIn(2, form.secondPercent, 308, 169.9, { x2: 343, size: 9 });
+
+      drawIn(2, total ? formatINR(finalAmt) : "", 164, 191.9, {
+        x2: 290,
+        size: 9,
+      });
+      drawIn(2, form.finalPercent, 308, 191.9, { x2: 343, size: 9 });
+
+      // Renewal Date (every month on ___ date): line 458→514 top=361.7
+      drawIn(2, form.renewalDate, 460, 361.7, {
+        x2: 514,
+        center: true,
+        size: 9,
+      });
+      // Subscription Plan: line ~399→570 top=379.1
+      drawIn(2, form.subscriptionPlan, 400, 379.1, { x2: 570, size: 9 });
+      // Monthly Subscription Rs.: line ~272→360 top=397.8
+      drawIn(2, form.monthlySubscription, 274, 397.8, { x2: 360, size: 9 });
+
+      // ============ PAGE 4 ============
+      // "____________rounds" underscore is x≈151→205 (before the word "rounds")
+      drawIn(3, form.revisionRounds, 155, 115.2, {
+        x2: 205,
+        center: true,
+        size: 9,
+      });
+      // "Free support period: ___________ days" line 157→218 top=556.5
+      drawIn(3, form.freeSupportDays, 158, 556.5, {
+        x2: 218,
+        center: true,
+        size: 9,
+      });
+
+      // ============ PAGE 5 ============
+      // SERVICE PROVIDER (left)
+      // Authorized Signature line (top=710.5) — leave empty (signed by hand)
+      // Name: line 110→252 top=731.5
+      drawIn(4, form.spName, 112, 731.5, { x2: 252, size: 9 });
+      // Designation: line 134→258 top=752.3
+      drawIn(4, form.spDesignation, 136, 752.3, { x2: 258, size: 9 });
+      // Date: ____/____/2026 — first ___ ≈108→130 (DD), second ___ ≈133→155 (MM)
+      drawIn(4, form.spDateDD, 110, 774.3, { x2: 130, center: true, size: 9 });
+      drawIn(4, form.spDateMM, 135, 774.3, { x2: 155, center: true, size: 9 });
+
+      // CLIENT (right)
+      // Client Signature line top=686.7 — leave empty
+      // Name: line 362→503 top=709.6
+      drawIn(4, form.clientName, 363, 709.6, { x2: 503, size: 9 });
+      // Company: line ~388→517 top=731.5 (auto-shrinks if long)
+      drawIn(4, form.companyName, 390, 731.5, { x2: 517, size: 9 });
+      // Designation: line 390→519 top=752.3
+      drawIn(4, form.clientDesignation, 392, 752.3, { x2: 519, size: 9 });
+      // Date: ____/____/2026 — first ___ ≈360→380 (DD), second ___ ≈384→405 (MM)
+      drawIn(4, form.clientDateDD, 361, 775.3, {
+        x2: 381,
+        center: true,
+        size: 9,
+      });
+      drawIn(4, form.clientDateMM, 385, 775.3, {
+        x2: 405,
+        center: true,
+        size: 9,
+      });
 
       const out = await pdf.save();
       const buf = new ArrayBuffer(out.byteLength);
@@ -264,7 +346,10 @@ function AgreementMaker() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const safeName = (form.clientName || "client").replace(/[^a-z0-9]+/gi, "_");
+      const safeName = (form.clientName || "client").replace(
+        /[^a-z0-9]+/gi,
+        "_",
+      );
       a.download = `AGZUS_Agreement_${safeName}.pdf`;
       document.body.appendChild(a);
       a.click();
