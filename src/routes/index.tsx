@@ -144,7 +144,7 @@ function AgreementMaker() {
       if (!res.ok) throw new Error("Could not load PDF template");
       const bytes = await res.arrayBuffer();
       const pdf = await PDFDocument.load(bytes);
-      const font = await pdf.embedFont(StandardFonts.Helvetica);
+      const boldFont = await pdf.embedFont(StandardFonts.HelveticaBold);
       const pages = pdf.getPages();
       const black = rgb(0.05, 0.05, 0.05);
       const white = rgb(1, 1, 1);
@@ -166,6 +166,7 @@ function AgreementMaker() {
         opts: DrawOpts = {},
       ) => {
         if (!text) return;
+        const activeFont = boldFont;
         const startSize = opts.size ?? 9;
         const minSize = opts.minSize ?? 6;
         const maxWidth = opts.x2 != null ? opts.x2 - x1 - 2 : undefined;
@@ -173,19 +174,19 @@ function AgreementMaker() {
         if (maxWidth) {
           while (
             size > minSize &&
-            font.widthOfTextAtSize(text, size) > maxWidth
+            activeFont.widthOfTextAtSize(text, size) > maxWidth
           ) {
             size -= 0.5;
           }
         }
-        const w = font.widthOfTextAtSize(text, size);
+        const w = activeFont.widthOfTextAtSize(text, size);
         let x = x1;
         if (opts.center && opts.x2 != null) {
           x = x1 + Math.max(0, (opts.x2 - x1 - w) / 2);
         }
-        // baseline ≈ 1pt above the underscore line (line ~ labelTop + 10)
-        const y = PH - (labelTop + 9);
-        pages[pageIdx].drawText(text, { x, y, size, font, color: black });
+        // baseline ~4pt above the underscore (line ~ labelTop + 10)
+        const y = PH - (labelTop + 6);
+        pages[pageIdx].drawText(text, { x, y, size, font: activeFont, color: black });
       };
 
       // White-out a region (used to hide the "Yes / No" template text)
@@ -210,10 +211,9 @@ function AgreementMaker() {
         labelTop: number,
         value: "Yes" | "No",
       ) => {
-        // "Yes / No" sits roughly x=460-491, top=374.8 (height ~10).
-        // Cover a slightly wider band to be safe, then draw selected centered.
-        cover(pageIdx, 457, labelTop - 1, 38, 13);
-        drawIn(pageIdx, value, 457, labelTop - 10, {
+        // Cover the template "Yes / No" text, then draw the selected value in the same spot.
+        cover(pageIdx, 457, labelTop - 1, 38, 12);
+        drawIn(pageIdx, value, 457, labelTop, {
           x2: 495,
           center: true,
           size: 10,
@@ -228,13 +228,12 @@ function AgreementMaker() {
         size: 9,
       });
 
-      // Client Details (right column). Each row: label top, underscore line extends to ~565.
-      // Centered & auto-shrunk so long emails/addresses fit neatly above the line.
-      drawIn(0, form.clientName, 382, 271.5, { x2: 565, center: true, size: 9 });
-      drawIn(0, form.companyName, 400, 291.5, { x2: 565, center: true, size: 9 });
-      drawIn(0, form.contactNo, 378, 311.5, { x2: 565, center: true, size: 9 });
-      drawIn(0, form.email, 350, 331.5, { x2: 565, center: true, size: 9 });
-      drawIn(0, form.address, 362, 351.5, { x2: 565, center: true, size: 9 });
+      // Client Details — left-aligned at the start of each underscore, auto-shrinks if too long.
+      drawIn(0, form.clientName, 382, 271.5, { x2: 565, size: 9 });
+      drawIn(0, form.companyName, 400, 291.5, { x2: 565, size: 9 });
+      drawIn(0, form.contactNo, 378, 311.5, { x2: 565, size: 9 });
+      drawIn(0, form.email, 350, 331.5, { x2: 565, size: 9 });
+      drawIn(0, form.address, 362, 351.5, { x2: 565, size: 9 });
 
       // ============ PAGE 2 ============
       // Project scope (left column underscore lines run to ~x=310)
