@@ -1,21 +1,8 @@
 [build]
   command = "npm run build"
-  publish = ".output/public"
+  publish = "dist"
 
-[build.environment]
-  NITRO_PRESET = "netlify"
-  NODE_VERSION = "20"
-
-# Serve /templates/* as pure static files — must come before the function catch-all
-[[redirects]]
-  from = "/templates/*"
-  to = "/templates/:splat"
-  status = 200
-  force = false
-
-# All other routes are handled by the Netlify SSR function
 [[redirects]]
   from = "/*"
-  to = "/.netlify/functions/server"
+  to = "/index.html"
   status = 200
-  force = false
