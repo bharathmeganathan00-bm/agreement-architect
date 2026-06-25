@@ -2,6 +2,17 @@
   command = "npm run build"
   publish = "dist"
 
+[build.environment]
+  NODE_VERSION = "20"
+
+# Serve template PDF as a static asset (must come before SPA catch-all)
+[[redirects]]
+  from = "/templates/*"
+  to = "/templates/:splat"
+  status = 200
+  force = false
+
+# SPA fallback — every other route serves index.html
 [[redirects]]
   from = "/*"
   to = "/index.html"
